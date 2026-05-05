@@ -27,6 +27,15 @@ pub enum AgentConversationEntryId {
     Conversation(AIConversationId),
 }
 
+impl AgentConversationEntryId {
+    pub fn as_key(&self) -> String {
+        match self {
+            AgentConversationEntryId::AmbientRun(id) => format!("task_{id}"),
+            AgentConversationEntryId::Conversation(id) => format!("conv_{id}"),
+        }
+    }
+}
+
 impl From<ConversationOrTaskId> for AgentConversationEntryId {
     fn from(id: ConversationOrTaskId) -> Self {
         match id {
@@ -42,6 +51,7 @@ impl From<ConversationOrTaskId> for AgentConversationEntryId {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AgentConversationNavigationSubject {
     Entry(AgentConversationEntryId),
+    #[allow(dead_code)]
     ServerToken(ServerConversationToken),
 }
 
@@ -271,6 +281,9 @@ pub(super) fn entry_for_task(
         || has_active_session_id
         || local_conversation_id.is_some()
         || server_conversation_token.is_some();
+    let can_copy_link = task.has_active_execution()
+        && task.active_run_execution().session_link.is_some()
+        || server_conversation_token.is_some();
 
     AgentConversationEntry {
         id: AgentConversationEntryId::AmbientRun(task.task_id),
@@ -294,7 +307,8 @@ pub(super) fn entry_for_task(
             request_usage: item.request_usage(app),
             run_time: item.run_time(),
             source: item.source().cloned(),
-            working_directory: None,
+            working_directory: conversation_metadata
+                .and_then(|metadata| metadata.initial_working_directory.clone()),
             environment_id: item.environment_id().map(ToString::to_string),
             harness: item.harness(app),
             artifacts: item.artifacts(app),
@@ -310,7 +324,7 @@ pub(super) fn entry_for_task(
         },
         capabilities: AgentConversationCapabilities {
             can_open,
-            can_copy_link: item.session_or_conversation_link(app).is_some(),
+            can_copy_link,
             can_share: task.conversation_id().is_some()
                 || local_conversation_id
                     .is_some_and(|id| history_model.can_conversation_be_shared(&id)),
@@ -422,7 +436,12 @@ fn entry_for_conversation_parts(
             can_open: has_local_persisted_data
                 || has_cloud_data
                 || item.get_open_action(None, app).is_some(),
-            can_copy_link: item.session_or_conversation_link(app).is_some(),
+            can_copy_link: server_conversation_token_for_conversation(
+                conversation_id,
+                Some(&metadata.nav_data),
+                history_model,
+            )
+            .is_some(),
             can_share: history_model.can_conversation_be_shared(&conversation_id),
             can_delete: has_local_persisted_data,
             can_fork_locally: has_local_persisted_data,
