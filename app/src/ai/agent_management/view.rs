@@ -1281,6 +1281,7 @@ impl AgentManagementView {
     ) {
         match kind {
             ConversationUpdateKind::Restored => {}
+            ConversationUpdateKind::MetadataChanged => self.get_tasks_from_model(ctx),
             ConversationUpdateKind::StatusSet {
                 prev_filter,
                 new_filter,
